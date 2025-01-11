@@ -1,2 +1,1 @@
-Hacer la compra
-Estudiar Rust
+[x] Comprar fruta

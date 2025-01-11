@@ -1,3 +1,6 @@
 .env
 
 /menu_rust/target
+
+
+/mi_cli/target

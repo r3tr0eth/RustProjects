@@ -1,0 +1,2 @@
+Hacer la compra
+Estudiar Rust

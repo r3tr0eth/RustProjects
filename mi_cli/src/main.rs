@@ -1,4 +1,6 @@
 use clap::{Parser, Subcommand};
+use eframe::egui;
+use eframe::App;
 use serde::{Serialize, Deserialize};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -16,19 +18,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Agrega una nueva tarea
-    Add { task: String },
-    /// Lista todas las tareas
-    List,
-    /// Edita una tarea existente
-    Edit { index: usize, task: String },
-    /// Elimina una tarea
-    Remove { index: usize },
-    /// Marca una tarea como completada
-    Complete { index: usize },
+    /// Inicia la interfaz gráfica
+    Gui,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Task {
     description: String,
     completed: bool,
@@ -38,83 +32,80 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Add { task } => {
-            add_task(&task).expect("Error al agregar la tarea");
-        }
-        Commands::List => {
-            list_tasks().expect("Error al listar las tareas");
-        }
-        Commands::Edit { index, task } => {
-            edit_task(index, &task).expect("Error al editar la tarea");
-        }
-        Commands::Remove { index } => {
-            remove_task(index).expect("Error al eliminar la tarea");
-        }
-        Commands::Complete { index } => {
-            complete_task(index).expect("Error al completar la tarea");
+        Commands::Gui => {
+            let options = eframe::NativeOptions {
+                initial_window_size: Some(egui::vec2(400.0, 300.0)),
+                ..Default::default()
+            };
+            eframe::run_native("Gestor de Tareas", options, Box::new(|_cc| Box::<MyApp>::default()));
         }
     }
 }
 
-fn add_task(task: &str) -> io::Result<()> {
-    let mut tasks = read_tasks()?;
-    tasks.push(Task {
-        description: task.to_string(),
-        completed: false,
-    });
-    write_tasks(&tasks)?;
-    println!("Tarea agregada: {}", task);
-    Ok(())
+#[derive(Default)]
+struct MyApp {
+    tasks: Vec<Task>,
+    new_task: String,
 }
 
-fn list_tasks() -> io::Result<()> {
-    let tasks = read_tasks()?;
-    if tasks.is_empty() {
-        println!("No hay tareas guardadas.");
-    } else {
-        println!("Lista de tareas:");
-        for (index, task) in tasks.iter().enumerate() {
-            let status = if task.completed { "[x]" } else { "[ ]" };
-            println!("{}: {} {}", index + 1, status, task.description);
+impl App for MyApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.label("Gestor de Tareas");
+            ui.horizontal(|ui| {
+                ui.label("Nueva tarea:");
+                ui.text_edit_singleline(&mut self.new_task);
+                if ui.button("Agregar").clicked() {
+                    self.add_task();
+                }
+            });
+
+            ui.separator();
+            ui.label("Lista de tareas:");
+            for (index, task) in self.tasks.iter().enumerate() {
+                let mut completed = task.completed;
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut completed, "");
+                    ui.label(&task.description);
+                    if completed != task.completed {
+                        self.complete_task(index);
+                    }
+                });
+            }
+        });
+
+        self.load_tasks();
+    }
+}
+
+impl MyApp {
+    fn add_task(&mut self) {
+        if !self.new_task.is_empty() {
+            self.tasks.push(Task {
+                description: self.new_task.clone(),
+                completed: false,
+            });
+            self.new_task.clear();
+            self.save_tasks();
         }
     }
-    Ok(())
-}
 
-fn edit_task(index: usize, new_task: &str) -> io::Result<()> {
-    let mut tasks = read_tasks()?;
-    if index > 0 && index <= tasks.len() {
-        tasks[index - 1].description = new_task.to_string();
-        write_tasks(&tasks)?;
-        println!("Tarea editada: {}", new_task);
-    } else {
-        println!("Índice de tarea no válido.");
+    fn complete_task(&mut self, index: usize) {
+        if let Some(task) = self.tasks.get_mut(index) {
+            task.completed = !task.completed;
+            self.save_tasks();
+        }
     }
-    Ok(())
-}
 
-fn remove_task(index: usize) -> io::Result<()> {
-    let mut tasks = read_tasks()?;
-    if index > 0 && index <= tasks.len() {
-        tasks.remove(index - 1);
-        write_tasks(&tasks)?;
-        println!("Tarea eliminada.");
-    } else {
-        println!("Índice de tarea no válido.");
+    fn load_tasks(&mut self) {
+        if let Ok(tasks) = read_tasks() {
+            self.tasks = tasks;
+        }
     }
-    Ok(())
-}
 
-fn complete_task(index: usize) -> io::Result<()> {
-    let mut tasks = read_tasks()?;
-    if index > 0 && index <= tasks.len() {
-        tasks[index - 1].completed = true;
-        write_tasks(&tasks)?;
-        println!("Tarea marcada como completada.");
-    } else {
-        println!("Índice de tarea no válido.");
+    fn save_tasks(&self) {
+        write_tasks(&self.tasks).expect("Error al guardar las tareas");
     }
-    Ok(())
 }
 
 fn read_tasks() -> io::Result<Vec<Task>> {
